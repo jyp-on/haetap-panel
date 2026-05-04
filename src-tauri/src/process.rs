@@ -1,17 +1,23 @@
+use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::collections::HashMap;
+use std::io::{Read, Write};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
 use tokio::sync::Mutex;
 
 pub struct ServiceManager {
     pids: Arc<Mutex<HashMap<String, u32>>>,
+    masters: Arc<Mutex<HashMap<String, Box<dyn MasterPty + Send>>>>,
+    writers: Arc<Mutex<HashMap<String, Box<dyn Write + Send>>>>,
 }
 
 impl ServiceManager {
     pub fn new() -> Self {
-        Self { pids: Arc::new(Mutex::new(HashMap::new())) }
+        Self {
+            pids: Arc::new(Mutex::new(HashMap::new())),
+            masters: Arc::new(Mutex::new(HashMap::new())),
+            writers: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 
     pub async fn spawn(
@@ -21,55 +27,88 @@ impl ServiceManager {
         command: &str,
         cwd: &str,
     ) -> Result<u32, String> {
-        let mut child = Command::new("sh")
-            .arg("-c")
-            .arg(command)
-            .current_dir(cwd)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|e| format!("spawn 실패: {}", e))?;
-        let pid = child.id().ok_or("PID 획득 실패")?;
-        self.pids.lock().await.insert(service_id.to_string(), pid);
+        let pty_system = native_pty_system();
+        let pair = pty_system
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|e| format!("openpty 실패: {}", e))?;
 
-        let stdout = child.stdout.take().ok_or("stdout 캡처 실패")?;
-        let stderr = child.stderr.take().ok_or("stderr 캡처 실패")?;
-        let log_event = format!("log:{}", service_id);
+        let mut cmd = CommandBuilder::new("sh");
+        cmd.arg("-c");
+        cmd.arg(command);
+        cmd.cwd(cwd);
+        cmd.env("TERM", "xterm-256color");
+
+        let mut child = pair
+            .slave
+            .spawn_command(cmd)
+            .map_err(|e| format!("spawn 실패: {}", e))?;
+        // Parent doesn't need slave anymore
+        drop(pair.slave);
+
+        let pid = child.process_id().ok_or("PID 획득 실패")?;
+        let mut reader = pair
+            .master
+            .try_clone_reader()
+            .map_err(|e| format!("reader clone 실패: {}", e))?;
+        let writer = pair
+            .master
+            .take_writer()
+            .map_err(|e| format!("writer take 실패: {}", e))?;
+
+        self.pids.lock().await.insert(service_id.to_string(), pid);
+        self.masters
+            .lock()
+            .await
+            .insert(service_id.to_string(), pair.master);
+        self.writers
+            .lock()
+            .await
+            .insert(service_id.to_string(), writer);
+
+        let log_event = format!("pty:{}", service_id);
         let state_event = format!("state:{}", service_id);
 
-        // stdout reader
+        // PTY reader OS thread
         {
             let app = app.clone();
             let event = log_event.clone();
-            tokio::spawn(async move {
-                let mut reader = BufReader::new(stdout).lines();
-                while let Ok(Some(line)) = reader.next_line().await {
-                    let _ = app.emit(&event, line);
-                }
-            });
-        }
-        // stderr reader (same channel)
-        {
-            let app = app.clone();
-            let event = log_event.clone();
-            tokio::spawn(async move {
-                let mut reader = BufReader::new(stderr).lines();
-                while let Ok(Some(line)) = reader.next_line().await {
-                    let _ = app.emit(&event, line);
+            std::thread::spawn(move || {
+                let mut buf = [0u8; 4096];
+                loop {
+                    match reader.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            let chunk = buf[..n].to_vec();
+                            let _ = app.emit(&event, chunk);
+                        }
+                        Err(_) => break,
+                    }
                 }
             });
         }
 
-        // wait + state event
+        // Wait + cleanup task (blocking wait offloaded)
         {
             let app = app.clone();
             let sid = service_id.to_string();
             let pids = self.pids.clone();
-            tokio::spawn(async move {
-                let status = child.wait().await;
-                let exit_code = status.ok().and_then(|s| s.code()).unwrap_or(-1);
-                pids.lock().await.remove(&sid);
+            let masters = self.masters.clone();
+            let writers = self.writers.clone();
+            tokio::task::spawn_blocking(move || {
+                let exit = child.wait().ok();
+                let exit_code = exit.as_ref().map(|s| s.exit_code() as i32).unwrap_or(-1);
+
+                tauri::async_runtime::block_on(async {
+                    pids.lock().await.remove(&sid);
+                    masters.lock().await.remove(&sid);
+                    writers.lock().await.remove(&sid);
+                });
+
                 let payload = if exit_code == 0 {
                     serde_json::json!({"status": "stopped"})
                 } else {
@@ -96,7 +135,6 @@ impl ServiceManager {
                 return Err(format!("SIGTERM 실패: pid={}", pid));
             }
         }
-        // 5초 후에도 PID가 살아있으면 SIGKILL
         let pids = self.pids.clone();
         let sid = service_id.to_string();
         tokio::spawn(async move {
@@ -108,6 +146,33 @@ impl ServiceManager {
             }
         });
         Ok(true)
+    }
+
+    pub async fn write_input(&self, service_id: &str, bytes: &[u8]) -> Result<(), String> {
+        let mut guard = self.writers.lock().await;
+        let writer = guard
+            .get_mut(service_id)
+            .ok_or_else(|| format!("writer 없음: {}", service_id))?;
+        writer
+            .write_all(bytes)
+            .map_err(|e| format!("write 실패: {}", e))?;
+        writer.flush().map_err(|e| format!("flush 실패: {}", e))?;
+        Ok(())
+    }
+
+    pub async fn resize(&self, service_id: &str, cols: u16, rows: u16) -> Result<(), String> {
+        let guard = self.masters.lock().await;
+        let master = guard
+            .get(service_id)
+            .ok_or_else(|| format!("master 없음: {}", service_id))?;
+        master
+            .resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|e| format!("resize 실패: {}", e))
     }
 
     pub async fn running_pids(&self) -> HashMap<String, u32> {
@@ -131,7 +196,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn pid_map_starts_empty() {
+    async fn empty_state() {
         let mgr = ServiceManager::new();
         assert!(mgr.running_pids().await.is_empty());
         assert!(!mgr.is_running("anything").await);
