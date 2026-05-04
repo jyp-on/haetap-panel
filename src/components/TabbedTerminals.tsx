@@ -13,7 +13,7 @@ export function TabbedTerminals() {
 
   if (openTabIds.length === 0) {
     return (
-      <Box sx={{ p: 3 }}>
+      <Box sx={{ p: 3, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <Typography color="text.secondary">
           서비스를 시작하면 여기에 터미널이 열립니다.
         </Typography>
@@ -32,17 +32,17 @@ export function TabbedTerminals() {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* 탭 바 */}
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'stretch',
-          minHeight: 36,
-          borderBottom: '1px solid',
-          borderColor: 'divider',
-          bgcolor: 'background.paper',
-          overflowX: 'auto',
-        }}
-      >
+      <Box sx={{
+        display: 'flex',
+        alignItems: 'flex-end',
+        minHeight: 38,
+        bgcolor: 'background.paper',
+        borderBottom: '1px solid',
+        borderColor: 'divider',
+        overflowX: 'auto',
+        px: 0.5,
+        pt: 0.5,
+      }}>
         {openTabIds.map((id) => {
           const sv = services.find((x) => x.id === id);
           if (!sv) return null;
@@ -56,15 +56,23 @@ export function TabbedTerminals() {
                 alignItems: 'center',
                 gap: 1,
                 px: 1.5,
+                height: 32,
                 cursor: 'pointer',
-                borderRight: '1px solid',
-                borderColor: 'divider',
                 bgcolor: active ? 'background.default' : 'transparent',
-                borderBottom: active ? '2px solid' : '2px solid transparent',
-                borderBottomColor: active ? 'primary.main' : 'transparent',
+                borderRadius: '6px 6px 0 0',
+                borderTop: active ? '1px solid' : '1px solid transparent',
+                borderLeft: active ? '1px solid' : '1px solid transparent',
+                borderRight: active ? '1px solid' : '1px solid transparent',
+                borderColor: active ? 'divider' : 'transparent',
+                marginRight: 0.25,
+                marginBottom: '-1px',
+                position: 'relative',
                 minWidth: 140,
                 maxWidth: 240,
                 userSelect: 'none',
+                color: active ? 'text.primary' : 'text.secondary',
+                transition: 'background-color 120ms ease, color 120ms ease',
+                '&:hover': { color: 'text.primary', bgcolor: active ? 'background.default' : '#2a2a2e' },
               }}
             >
               <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: dotColor(id), flexShrink: 0 }} />
@@ -72,6 +80,8 @@ export function TabbedTerminals() {
                 variant="body2"
                 sx={{
                   flex: 1,
+                  fontSize: 12.5,
+                  fontWeight: active ? 600 : 400,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
@@ -86,7 +96,7 @@ export function TabbedTerminals() {
                     e.stopPropagation();
                     closeTab(id);
                   }}
-                  sx={{ p: 0.25 }}
+                  sx={{ p: 0.25, color: 'text.secondary', '&:hover': { color: 'text.primary' } }}
                 >
                   <CloseIcon fontSize="inherit" />
                 </IconButton>
@@ -96,8 +106,8 @@ export function TabbedTerminals() {
         })}
       </Box>
 
-      {/* 모든 열린 탭의 터미널을 마운트 (활성만 보임) — 스크롤백 보존 */}
-      <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>
+      {/* 모든 열린 탭 마운트 (활성만 보임) */}
+      <Box sx={{ flex: 1, minHeight: 0, position: 'relative', bgcolor: 'background.default' }}>
         {openTabIds.map((id) => (
           <Box
             key={id}

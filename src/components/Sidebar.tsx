@@ -57,27 +57,53 @@ export function Sidebar() {
   };
 
   return (
-    <Box sx={{ width: 240, borderRight: '1px solid', borderColor: 'divider', display: 'flex', flexDirection: 'column' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1.5 }}>
-        <Typography variant="overline">Projects</Typography>
-        <IconButton size="small" onClick={() => { setEditing(undefined); setModalOpen(true); }}>
+    <Box sx={{
+      width: 280,
+      bgcolor: '#202023',
+      borderRight: '1px solid',
+      borderColor: 'divider',
+      display: 'flex',
+      flexDirection: 'column',
+    }}>
+      <Box sx={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        px: 2,
+        py: 1.5,
+        borderBottom: '1px solid',
+        borderColor: 'divider',
+      }}>
+        <Typography variant="overline" sx={{ color: 'text.secondary' }}>Projects</Typography>
+        <IconButton
+          size="small"
+          onClick={() => { setEditing(undefined); setModalOpen(true); }}
+          sx={{ color: 'text.secondary', '&:hover': { color: 'text.primary' } }}
+        >
           <AddIcon fontSize="small" />
         </IconButton>
       </Box>
-      <List dense sx={{ flex: 1, overflow: 'auto' }}>
+      <List dense sx={{ flex: 1, overflow: 'auto', py: 0.5 }}>
         {projects.map((p) => (
           <ListItemButton
             key={p.id}
             selected={p.id === selectedId}
             onClick={() => selectProject(p.id)}
-            sx={{ pr: 1 }}
+            sx={{ pr: 0.5 }}
           >
             <ListItemText
               primary={p.name}
               secondary={p.cwd}
               slotProps={{
+                primary: { sx: { fontSize: 13, fontWeight: 500 } },
                 secondary: {
-                  sx: { fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+                  sx: {
+                    fontSize: 11,
+                    color: '#6e6e76',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  },
                 },
               }}
             />
@@ -89,6 +115,7 @@ export function Sidebar() {
                 setMenuAnchor(e.currentTarget);
                 setMenuTarget(p);
               }}
+              sx={{ color: 'text.secondary' }}
             >
               <MoreVertIcon fontSize="small" />
             </IconButton>

@@ -1,19 +1,13 @@
 import { useEffect, useRef } from 'react';
-import { Box, IconButton, Typography } from '@mui/material';
-import CloseIcon from '@mui/icons-material/Close';
+import { Box } from '@mui/material';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { useStore } from '../store';
 import { ipc, onPtyData, onState } from '../ipc';
 
 type Props = { serviceId: string };
 
 export function TerminalPane({ serviceId }: Props) {
-  const services = useStore((s) => s.services);
-  const closeTab = useStore((s) => s.closeTab);
-  const service = services.find((s) => s.id === serviceId);
-
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -21,8 +15,14 @@ export function TerminalPane({ serviceId }: Props) {
 
     const term = new Terminal({
       fontFamily: 'Menlo, monospace',
-      fontSize: 12,
-      theme: { background: '#0e0e0e', foreground: '#e0e0e0' },
+      fontSize: 12.5,
+      lineHeight: 1.2,
+      theme: {
+        background: '#0f0f10',
+        foreground: '#e6e6e6',
+        cursor: '#a48bf2',
+        selectionBackground: '#3a3a44',
+      },
       scrollback: 5000,
       convertEol: true,
     });
@@ -80,26 +80,8 @@ export function TerminalPane({ serviceId }: Props) {
   }, [serviceId]);
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          px: 1,
-          py: 0.5,
-          bgcolor: 'background.paper',
-          borderBottom: '1px solid',
-          borderColor: 'divider',
-        }}
-      >
-        <Typography variant="overline" sx={{ flex: 1 }}>
-          {service?.name ?? serviceId}
-        </Typography>
-        <IconButton size="small" onClick={() => closeTab(serviceId)} title="탭 닫기">
-          <CloseIcon fontSize="small" />
-        </IconButton>
-      </Box>
-      <Box ref={containerRef} sx={{ flex: 1, minHeight: 0, bgcolor: '#0e0e0e' }} />
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, bgcolor: '#0f0f10' }}>
+      <Box ref={containerRef} sx={{ flex: 1, minHeight: 0, p: 0.5 }} />
     </Box>
   );
 }

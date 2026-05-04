@@ -33,18 +33,27 @@ export function ServiceCard({
 
   return (
     <Box sx={{
-      display: 'flex', alignItems: 'center', gap: 1, p: 1,
-      border: '1px solid', borderColor: 'divider', borderRadius: 1,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 1.5,
+      px: 1.5,
+      py: 1,
+      bgcolor: 'background.paper',
+      border: '1px solid',
+      borderColor: 'divider',
+      borderRadius: 1.25,
+      transition: 'background-color 120ms ease, border-color 120ms ease',
+      '&:hover': { bgcolor: '#2e2e34' },
     }}>
-      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: dotColor }} />
-      <Typography sx={{ flex: 1 }}>{service.name}</Typography>
-      <Typography variant="caption" color="text.secondary" sx={{ width: 200 }}>
+      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: dotColor, flexShrink: 0 }} />
+      <Typography sx={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{service.name}</Typography>
+      <Typography variant="caption" sx={{ width: 200, color: 'text.secondary' }}>
         {stateLabel}
       </Typography>
       {isRunning
         ? <Button size="small" color="warning" onClick={onStop}>Stop</Button>
         : <Button size="small" color="primary" onClick={onStart}>Start</Button>}
-      <IconButton size="small" onClick={(e) => setMenuAnchor(e.currentTarget)}>
+      <IconButton size="small" onClick={(e) => setMenuAnchor(e.currentTarget)} sx={{ color: 'text.secondary' }}>
         <MoreVertIcon fontSize="small" />
       </IconButton>
       <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}>
