@@ -1,20 +1,9 @@
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "status", rename_all = "lowercase")]
-pub enum ServiceState {
-    Stopped,
-    Starting,
-    Running { pid: u32, started_at: u64 },
-    Stopping,
-    Crashed { exit_code: i32, at: u64 },
-}
 
 pub struct ServiceManager {
     pids: Arc<Mutex<HashMap<String, u32>>>,
