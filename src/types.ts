@@ -1,6 +1,7 @@
 export type Project = {
   id: string;
   name: string;
+  cwd: string;
 };
 
 export type Service = {
@@ -8,7 +9,6 @@ export type Service = {
   projectId: string;
   name: string;
   command: string;
-  cwd: string;
 };
 
 export type ServiceState =

@@ -25,8 +25,11 @@ export function ServiceList() {
     return <Typography color="text.secondary">왼쪽에서 프로젝트를 선택하세요.</Typography>;
   }
 
+  const selectedProject = projects.find((p) => p.id === selectedId);
+  if (!selectedProject) return null;
+
   const list = services.filter((s) => s.projectId === selectedId);
-  const projectName = projects.find((p) => p.id === selectedId)?.name ?? '';
+  const cwd = selectedProject.cwd;
 
   const persist = () => {
     const all = useStore.getState();
@@ -39,10 +42,35 @@ export function ServiceList() {
     persist();
   };
 
+  const startOne = async (sv: Service) => {
+    if (!cwd) {
+      useStore.getState().appendLog(sv.id, `[ERROR] 프로젝트의 작업 디렉토리(cwd)가 비어있습니다. 프로젝트 편집에서 설정하세요.`);
+      useStore.getState().setState(sv.id, { status: 'crashed', exitCode: -1, at: Date.now() });
+      return;
+    }
+    useStore.getState().setState(sv.id, { status: 'starting' });
+    try {
+      const pid = await ipc.startService(sv.id, sv.command, cwd);
+      useStore.getState().setState(sv.id, { status: 'running', pid, startedAt: Date.now() });
+    } catch (e) {
+      useStore.getState().setState(sv.id, { status: 'crashed', exitCode: -1, at: Date.now() });
+      useStore.getState().appendLog(sv.id, `[ERROR] ${e}`);
+    }
+  };
+
+  const stopOne = async (sv: Service) => {
+    useStore.getState().setState(sv.id, { status: 'stopping' });
+    try {
+      await ipc.stopService(sv.id);
+    } catch (e) {
+      useStore.getState().appendLog(sv.id, `[ERROR] ${e}`);
+    }
+  };
+
   return (
     <Box>
       <Stack direction="row" sx={{ mb: 2, justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="h6">{projectName}</Typography>
+        <Typography variant="h6">{selectedProject.name}</Typography>
         <Stack direction="row" spacing={1}>
           <Button
             variant="outlined" size="small" color="primary"
@@ -51,16 +79,7 @@ export function ServiceList() {
                 const st = states[sv.id]?.status ?? 'stopped';
                 return st !== 'running' && st !== 'starting';
               });
-              await Promise.all(targets.map(async (sv) => {
-                useStore.getState().setState(sv.id, { status: 'starting' });
-                try {
-                  const pid = await ipc.startService(sv.id, sv.command, sv.cwd);
-                  useStore.getState().setState(sv.id, { status: 'running', pid, startedAt: Date.now() });
-                } catch (e) {
-                  useStore.getState().setState(sv.id, { status: 'crashed', exitCode: -1, at: Date.now() });
-                  useStore.getState().appendLog(sv.id, `[ERROR] ${e}`);
-                }
-              }));
+              await Promise.all(targets.map(startOne));
             }}
           >
             Start All
@@ -69,14 +88,7 @@ export function ServiceList() {
             variant="outlined" size="small" color="warning"
             onClick={async () => {
               const targets = list.filter((sv) => states[sv.id]?.status === 'running');
-              await Promise.all(targets.map(async (sv) => {
-                useStore.getState().setState(sv.id, { status: 'stopping' });
-                try {
-                  await ipc.stopService(sv.id);
-                } catch (e) {
-                  useStore.getState().appendLog(sv.id, `[ERROR] ${e}`);
-                }
-              }));
+              await Promise.all(targets.map(stopOne));
             }}
           >
             Stop All
@@ -90,25 +102,8 @@ export function ServiceList() {
             service={s}
             state={states[s.id] ?? { status: 'stopped' }}
             pinned={pinnedIds.includes(s.id)}
-            onStart={async () => {
-              useStore.getState().setState(s.id, { status: 'starting' });
-              try {
-                const pid = await ipc.startService(s.id, s.command, s.cwd);
-                useStore.getState().setState(s.id, { status: 'running', pid, startedAt: Date.now() });
-              } catch (e) {
-                useStore.getState().setState(s.id, { status: 'crashed', exitCode: -1, at: Date.now() });
-                useStore.getState().appendLog(s.id, `[ERROR] ${e}`);
-              }
-            }}
-            onStop={async () => {
-              useStore.getState().setState(s.id, { status: 'stopping' });
-              try {
-                await ipc.stopService(s.id);
-                // 실제 종료 상태(stopped/crashed)는 state event로 들어옴
-              } catch (e) {
-                useStore.getState().appendLog(s.id, `[ERROR] ${e}`);
-              }
-            }}
+            onStart={() => startOne(s)}
+            onStop={() => stopOne(s)}
             onPin={() => togglePin(s.id)}
             onEdit={() => { setEditing(s); setModalOpen(true); }}
             onDelete={() => { removeService(s.id); persist(); }}

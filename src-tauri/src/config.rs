@@ -7,6 +7,8 @@ use std::fs;
 pub struct Project {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub cwd: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -16,7 +18,6 @@ pub struct Service {
     pub project_id: String,
     pub name: String,
     pub command: String,
-    pub cwd: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -73,13 +74,16 @@ mod tests {
         let path = tmp_path("roundtrip");
         let original = Config {
             version: 1,
-            projects: vec![Project { id: "p1".into(), name: "incubody".into() }],
+            projects: vec![Project {
+                id: "p1".into(),
+                name: "incubody".into(),
+                cwd: "/Users/jyp-mac/develop/haetap/incubody".into(),
+            }],
             services: vec![Service {
                 id: "s1".into(),
                 project_id: "p1".into(),
                 name: "API".into(),
                 command: "./api.sh".into(),
-                cwd: "/tmp".into(),
             }],
         };
         save(&path, &original).unwrap();
