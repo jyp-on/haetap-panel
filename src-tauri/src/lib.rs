@@ -35,6 +35,9 @@ pub fn run() {
             ipc::start_service,
             ipc::stop_service,
             ipc::list_running,
+            ipc::send_input,
+            ipc::resize_pty,
+            ipc::list_scripts,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

@@ -48,3 +48,43 @@ pub async fn list_running(
 ) -> Result<HashMap<String, u32>, String> {
     Ok(state.manager.running_pids().await)
 }
+
+#[tauri::command]
+pub async fn send_input(
+    state: State<'_, AppState>,
+    service_id: String,
+    data: String,
+) -> Result<(), String> {
+    state.manager.write_input(&service_id, data.as_bytes()).await
+}
+
+#[tauri::command]
+pub async fn resize_pty(
+    state: State<'_, AppState>,
+    service_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    state.manager.resize(&service_id, cols, rows).await
+}
+
+#[tauri::command]
+pub fn list_scripts(cwd: String) -> Result<Vec<String>, String> {
+    use std::fs;
+    let entries = fs::read_dir(&cwd).map_err(|e| format!("디렉토리 읽기 실패: {}", e))?;
+    let mut scripts: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let path = e.path();
+            if path.is_file() {
+                let name = path.file_name()?.to_string_lossy().to_string();
+                if name.ends_with(".sh") {
+                    return Some(name);
+                }
+            }
+            None
+        })
+        .collect();
+    scripts.sort();
+    Ok(scripts)
+}
