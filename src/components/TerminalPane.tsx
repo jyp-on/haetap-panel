@@ -5,13 +5,13 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { useStore } from '../store';
-import { ipc, onPtyData } from '../ipc';
+import { ipc, onPtyData, onState } from '../ipc';
 
 type Props = { serviceId: string };
 
 export function TerminalPane({ serviceId }: Props) {
   const services = useStore((s) => s.services);
-  const togglePin = useStore((s) => s.togglePin);
+  const closeTab = useStore((s) => s.closeTab);
   const service = services.find((s) => s.id === serviceId);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -31,8 +31,15 @@ export function TerminalPane({ serviceId }: Props) {
     term.open(containerRef.current);
 
     // PTY 바이트 → 터미널
-    const unlistenPromise = onPtyData(serviceId, (bytes) => {
+    const dataPromise = onPtyData(serviceId, (bytes) => {
       term.write(bytes);
+    });
+
+    // 시작/재시작 시 화면 초기화 (clean session)
+    const statePromise = onState(serviceId, (st) => {
+      if (st.status === 'starting' || st.status === 'running') {
+        term.reset();
+      }
     });
 
     // 터미널 키스트로크 → PTY stdin
@@ -66,7 +73,8 @@ export function TerminalPane({ serviceId }: Props) {
     return () => {
       ro.disconnect();
       onDataDisp.dispose();
-      unlistenPromise.then((un) => un()).catch(() => {});
+      dataPromise.then((un) => un()).catch(() => {});
+      statePromise.then((un) => un()).catch(() => {});
       term.dispose();
     };
   }, [serviceId]);
@@ -87,7 +95,7 @@ export function TerminalPane({ serviceId }: Props) {
         <Typography variant="overline" sx={{ flex: 1 }}>
           {service?.name ?? serviceId}
         </Typography>
-        <IconButton size="small" onClick={() => togglePin(serviceId)}>
+        <IconButton size="small" onClick={() => closeTab(serviceId)} title="탭 닫기">
           <CloseIcon fontSize="small" />
         </IconButton>
       </Box>

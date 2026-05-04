@@ -2,24 +2,20 @@ import { useState } from 'react';
 import {
   Box, Typography, IconButton, Menu, MenuItem, Button,
 } from '@mui/material';
-import PushPinIcon from '@mui/icons-material/PushPin';
-import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import type { Service, ServiceState } from '../types';
 
 type Props = {
   service: Service;
   state: ServiceState;
-  pinned: boolean;
   onStart: () => void;
   onStop: () => void;
-  onPin: () => void;
   onEdit: () => void;
   onDelete: () => void;
 };
 
 export function ServiceCard({
-  service, state, pinned, onStart, onStop, onPin, onEdit, onDelete,
+  service, state, onStart, onStop, onEdit, onDelete,
 }: Props) {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const isRunning = state.status === 'running';
@@ -48,19 +44,10 @@ export function ServiceCard({
       {isRunning
         ? <Button size="small" color="warning" onClick={onStop}>Stop</Button>
         : <Button size="small" color="primary" onClick={onStart}>Start</Button>}
-      <IconButton size="small" onClick={onPin}>
-        {pinned
-          ? <PushPinIcon fontSize="small" color="primary" />
-          : <PushPinOutlinedIcon fontSize="small" />}
-      </IconButton>
       <IconButton size="small" onClick={(e) => setMenuAnchor(e.currentTarget)}>
         <MoreVertIcon fontSize="small" />
       </IconButton>
-      <Menu
-        anchorEl={menuAnchor}
-        open={!!menuAnchor}
-        onClose={() => setMenuAnchor(null)}
-      >
+      <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}>
         <MenuItem onClick={() => { setMenuAnchor(null); onEdit(); }}>편집</MenuItem>
         <MenuItem onClick={() => { setMenuAnchor(null); onDelete(); }}>삭제</MenuItem>
       </Menu>

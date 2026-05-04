@@ -13,10 +13,8 @@ export function ServiceList() {
   const projects = useStore((s) => s.projects);
   const services = useStore((s) => s.services);
   const states = useStore((s) => s.states);
-  const pinnedIds = useStore((s) => s.pinnedIds);
   const upsertService = useStore((s) => s.upsertService);
   const removeService = useStore((s) => s.removeService);
-  const togglePin = useStore((s) => s.togglePin);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Service | undefined>();
@@ -48,6 +46,8 @@ export function ServiceList() {
       useStore.getState().setState(sv.id, { status: 'crashed', exitCode: -1, at: Date.now() });
       return;
     }
+    // 시작 직전에 탭 열어두면 starting 상태 변화도 사용자가 볼 수 있다
+    useStore.getState().openTab(sv.id);
     useStore.getState().setState(sv.id, { status: 'starting' });
     try {
       const pid = await ipc.startService(sv.id, sv.command, cwd);
@@ -101,10 +101,8 @@ export function ServiceList() {
             key={s.id}
             service={s}
             state={states[s.id] ?? { status: 'stopped' }}
-            pinned={pinnedIds.includes(s.id)}
             onStart={() => startOne(s)}
             onStop={() => stopOne(s)}
-            onPin={() => togglePin(s.id)}
             onEdit={() => { setEditing(s); setModalOpen(true); }}
             onDelete={() => { removeService(s.id); persist(); }}
           />

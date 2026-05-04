@@ -4,7 +4,7 @@ import { useStore } from './store';
 import { ipc, onState } from './ipc';
 import { Sidebar } from './components/Sidebar';
 import { ServiceList } from './components/ServiceList';
-import { PinnedLogs } from './components/PinnedLogs';
+import { TabbedTerminals } from './components/TabbedTerminals';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 
 export default function App() {
@@ -62,7 +62,7 @@ export default function App() {
           <ServiceList />
         </Box>
         <Box sx={{ flex: 1, borderTop: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
-          <PinnedLogs />
+          <TabbedTerminals />
         </Box>
       </Box>
     </Box>
