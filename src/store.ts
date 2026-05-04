@@ -1,14 +1,11 @@
 import { create } from 'zustand';
 import type { Project, Service, ServiceState } from './types';
 
-const MAX_LOG_LINES = 5000;
-
 type State = {
   projects: Project[];
   services: Service[];
   selectedProjectId: string | null;
   states: Record<string, ServiceState>;
-  logs: Record<string, string[]>;
   pinnedIds: string[];
 };
 
@@ -21,7 +18,6 @@ type Actions = {
   upsertService: (s: Service) => void;
   removeService: (id: string) => void;
   setState: (serviceId: string, state: ServiceState) => void;
-  appendLog: (serviceId: string, line: string) => void;
   togglePin: (serviceId: string) => void;
 };
 
@@ -30,7 +26,6 @@ export const useStore = create<State & Actions>((set) => ({
   services: [],
   selectedProjectId: null,
   states: {},
-  logs: {},
   pinnedIds: [],
 
   setProjects: (projects) => set({ projects }),
@@ -61,13 +56,6 @@ export const useStore = create<State & Actions>((set) => ({
     })),
   setState: (serviceId, state) =>
     set((s) => ({ states: { ...s.states, [serviceId]: state } })),
-  appendLog: (serviceId, line) =>
-    set((s) => {
-      const prev = s.logs[serviceId] ?? [];
-      const next = [...prev, line];
-      const trimmed = next.length > MAX_LOG_LINES ? next.slice(next.length - MAX_LOG_LINES) : next;
-      return { logs: { ...s.logs, [serviceId]: trimmed } };
-    }),
   togglePin: (serviceId) =>
     set((s) => ({
       pinnedIds: s.pinnedIds.includes(serviceId)

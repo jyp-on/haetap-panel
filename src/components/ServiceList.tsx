@@ -44,7 +44,7 @@ export function ServiceList() {
 
   const startOne = async (sv: Service) => {
     if (!cwd) {
-      useStore.getState().appendLog(sv.id, `[ERROR] 프로젝트의 작업 디렉토리(cwd)가 비어있습니다. 프로젝트 편집에서 설정하세요.`);
+      console.error(`[${sv.name}] 프로젝트의 작업 디렉토리(cwd)가 비어있습니다.`);
       useStore.getState().setState(sv.id, { status: 'crashed', exitCode: -1, at: Date.now() });
       return;
     }
@@ -54,7 +54,7 @@ export function ServiceList() {
       useStore.getState().setState(sv.id, { status: 'running', pid, startedAt: Date.now() });
     } catch (e) {
       useStore.getState().setState(sv.id, { status: 'crashed', exitCode: -1, at: Date.now() });
-      useStore.getState().appendLog(sv.id, `[ERROR] ${e}`);
+      console.error(`[${sv.name}]`, e);
     }
   };
 
@@ -63,7 +63,7 @@ export function ServiceList() {
     try {
       await ipc.stopService(sv.id);
     } catch (e) {
-      useStore.getState().appendLog(sv.id, `[ERROR] ${e}`);
+      console.error(`[${sv.name}]`, e);
     }
   };
 

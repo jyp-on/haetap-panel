@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Box } from '@mui/material';
 import { useStore } from './store';
-import { ipc, onLog, onState } from './ipc';
+import { ipc, onState } from './ipc';
 import { Sidebar } from './components/Sidebar';
 import { ServiceList } from './components/ServiceList';
 import { PinnedLogs } from './components/PinnedLogs';
@@ -12,8 +12,7 @@ export default function App() {
   const setServices = useStore((s) => s.setServices);
   const services = useStore((s) => s.services);
   const setState = useStore((s) => s.setState);
-  const appendLog = useStore((s) => s.appendLog);
-  const unlistenRef = useRef<Map<string, UnlistenFn[]>>(new Map());
+  const unlistenRef = useRef<Map<string, UnlistenFn>>(new Map());
 
   // Initial config load
   useEffect(() => {
@@ -25,35 +24,32 @@ export default function App() {
       .catch(console.error);
   }, [setProjects, setServices]);
 
-  // Sync log/state listeners to the current service list (no cleanup return)
+  // Sync state listeners to current service list (log은 TerminalPane이 자체 구독)
   useEffect(() => {
     const map = unlistenRef.current;
     const currentIds = new Set(services.map((s) => s.id));
 
-    // Unregister listeners for services that disappeared
-    for (const [id, fns] of Array.from(map.entries())) {
+    for (const [id, fn] of Array.from(map.entries())) {
       if (!currentIds.has(id)) {
-        fns.forEach((f) => f());
+        fn();
         map.delete(id);
       }
     }
 
-    // Register listeners for newly added services
     services.forEach((s) => {
       if (!map.has(s.id)) {
-        Promise.all([
-          onLog(s.id, (line) => appendLog(s.id, line)),
-          onState(s.id, (state) => setState(s.id, state)),
-        ]).then((fns) => map.set(s.id, fns));
+        onState(s.id, (state) => setState(s.id, state)).then((fn) =>
+          map.set(s.id, fn),
+        );
       }
     });
-  }, [services, appendLog, setState]);
+  }, [services, setState]);
 
-  // Unmount cleanup: detach all listeners exactly once
+  // Unmount cleanup
   useEffect(() => {
     return () => {
       const map = unlistenRef.current;
-      for (const fns of map.values()) fns.forEach((f) => f());
+      for (const fn of map.values()) fn();
       map.clear();
     };
   }, []);
