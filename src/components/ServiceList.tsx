@@ -44,7 +44,43 @@ export function ServiceList() {
       <Stack direction="row" sx={{ mb: 2, justifyContent: 'space-between', alignItems: 'center' }}>
         <Typography variant="h6">{projectName}</Typography>
         <Stack direction="row" spacing={1}>
-          {/* Start All / Stop All는 Task 11에서 추가 */}
+          <Button
+            variant="outlined" size="small" color="primary"
+            onClick={async () => {
+              const targets = list.filter((sv) => {
+                const st = states[sv.id]?.status ?? 'stopped';
+                return st !== 'running' && st !== 'starting';
+              });
+              await Promise.all(targets.map(async (sv) => {
+                useStore.getState().setState(sv.id, { status: 'starting' });
+                try {
+                  const pid = await ipc.startService(sv.id, sv.command, sv.cwd);
+                  useStore.getState().setState(sv.id, { status: 'running', pid, startedAt: Date.now() });
+                } catch (e) {
+                  useStore.getState().setState(sv.id, { status: 'crashed', exitCode: -1, at: Date.now() });
+                  useStore.getState().appendLog(sv.id, `[ERROR] ${e}`);
+                }
+              }));
+            }}
+          >
+            Start All
+          </Button>
+          <Button
+            variant="outlined" size="small" color="warning"
+            onClick={async () => {
+              const targets = list.filter((sv) => states[sv.id]?.status === 'running');
+              await Promise.all(targets.map(async (sv) => {
+                useStore.getState().setState(sv.id, { status: 'stopping' });
+                try {
+                  await ipc.stopService(sv.id);
+                } catch (e) {
+                  useStore.getState().appendLog(sv.id, `[ERROR] ${e}`);
+                }
+              }));
+            }}
+          >
+            Stop All
+          </Button>
         </Stack>
       </Stack>
       <Stack spacing={1}>
