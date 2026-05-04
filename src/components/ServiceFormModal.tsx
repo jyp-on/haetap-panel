@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, DialogActions,
-  TextField, Button, Stack, MenuItem,
+  TextField, Button, Stack, Autocomplete,
 } from '@mui/material';
 import { ipc } from '../ipc';
 import type { Service } from '../types';
@@ -53,8 +53,8 @@ export function ServiceFormModal({ open, initial, projectId, cwd, onClose, onSub
   const helperText = scanError
     ? `(디렉토리 읽기 실패: ${cwd})`
     : scripts.length === 0
-      ? `(이 디렉토리에 *.sh 파일 없음: ${cwd})`
-      : cwd;
+      ? `(이 디렉토리 하위에 *.sh 파일 없음)`
+      : `${scripts.length}개의 *.sh 파일 발견`;
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
@@ -72,23 +72,27 @@ export function ServiceFormModal({ open, initial, projectId, cwd, onClose, onSub
             value={command}
             onChange={(e) => setCommand(e.target.value)}
             placeholder="./api.sh"
-            helperText={helperText}
+            helperText={cwd}
           />
-          {scripts.length > 0 && (
-            <TextField
-              select
-              label="이 디렉토리의 스크립트"
-              value=""
-              onChange={(e) => {
-                if (e.target.value) setCommand(`./${e.target.value}`);
-              }}
-              size="small"
-            >
-              {scripts.map((s) => (
-                <MenuItem key={s} value={s}>{s}</MenuItem>
-              ))}
-            </TextField>
-          )}
+          <Autocomplete
+            options={scripts}
+            value={null}
+            blurOnSelect
+            clearOnBlur
+            onChange={(_, value) => {
+              if (value) setCommand(`./${value}`);
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="이 프로젝트의 스크립트 (검색 가능)"
+                size="small"
+                helperText={helperText}
+              />
+            )}
+            disabled={scripts.length === 0 && !scanError}
+            noOptionsText="일치하는 스크립트 없음"
+          />
         </Stack>
       </DialogContent>
       <DialogActions>

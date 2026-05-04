@@ -70,21 +70,63 @@ pub async fn resize_pty(
 
 #[tauri::command]
 pub fn list_scripts(cwd: String) -> Result<Vec<String>, String> {
-    use std::fs;
-    let entries = fs::read_dir(&cwd).map_err(|e| format!("디렉토리 읽기 실패: {}", e))?;
-    let mut scripts: Vec<String> = entries
-        .filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let path = e.path();
-            if path.is_file() {
-                let name = path.file_name()?.to_string_lossy().to_string();
-                if name.ends_with(".sh") {
-                    return Some(name);
-                }
+    use std::path::PathBuf;
+
+    const MAX_DEPTH: usize = 5;
+    const IGNORED_DIRS: &[&str] = &[
+        "node_modules", "target", "dist", "build",
+        "Pods", "__pycache__", "venv", ".venv",
+        ".dart_tool", ".pub-cache", ".next", ".turbo", ".gradle",
+        ".git", ".idea", ".vscode",
+    ];
+
+    let root = PathBuf::from(&cwd);
+    if !root.is_dir() {
+        return Err(format!("디렉토리가 아님: {}", cwd));
+    }
+
+    let mut results: Vec<String> = Vec::new();
+    walk(&root, &root, 0, MAX_DEPTH, IGNORED_DIRS, &mut results);
+    results.sort();
+    Ok(results)
+}
+
+fn walk(
+    root: &std::path::Path,
+    current: &std::path::Path,
+    depth: usize,
+    max_depth: usize,
+    ignored: &[&str],
+    out: &mut Vec<String>,
+) {
+    if depth > max_depth {
+        return;
+    }
+    let entries = match std::fs::read_dir(current) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = match path.file_name() {
+            Some(n) => n.to_string_lossy().to_string(),
+            None => continue,
+        };
+        if path.is_dir() {
+            // 숨김 디렉토리 + 무시 목록 스킵
+            if name.starts_with('.') {
+                continue;
             }
-            None
-        })
-        .collect();
-    scripts.sort();
-    Ok(scripts)
+            if ignored.contains(&name.as_str()) {
+                continue;
+            }
+            walk(root, &path, depth + 1, max_depth, ignored, out);
+        } else if path.is_file() && name.ends_with(".sh") {
+            if let Ok(rel) = path.strip_prefix(root) {
+                let s = rel.to_string_lossy().to_string();
+                // 일관된 경로 구분자
+                out.push(s.replace('\\', "/"));
+            }
+        }
+    }
 }
