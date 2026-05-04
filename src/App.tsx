@@ -1,51 +1,33 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import { useEffect } from 'react';
+import { Box } from '@mui/material';
+import { useStore } from './store';
+import { ipc } from './ipc';
+import { Sidebar } from './components/Sidebar';
+import { ServiceList } from './components/ServiceList';
+import { PinnedLogs } from './components/PinnedLogs';
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+export default function App() {
+  const setProjects = useStore((s) => s.setProjects);
+  const setServices = useStore((s) => s.setServices);
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+  useEffect(() => {
+    ipc.loadConfig().then((cfg) => {
+      setProjects(cfg.projects);
+      setServices(cfg.services);
+    }).catch(console.error);
+  }, [setProjects, setServices]);
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+    <Box sx={{ display: 'flex', height: '100vh' }}>
+      <Sidebar />
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+          <ServiceList />
+        </Box>
+        <Box sx={{ flex: 1, borderTop: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
+          <PinnedLogs />
+        </Box>
+      </Box>
+    </Box>
   );
 }
-
-export default App;
