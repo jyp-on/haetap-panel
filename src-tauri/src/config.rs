@@ -3,12 +3,14 @@ use std::path::PathBuf;
 use std::fs;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct Project {
     pub id: String,
     pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct Service {
     pub id: String,
     pub project_id: String,
@@ -18,6 +20,7 @@ pub struct Service {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct Config {
     #[serde(default = "default_version")]
     pub version: u32,
