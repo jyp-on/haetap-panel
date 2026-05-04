@@ -1,28 +1,43 @@
 import { useState, useEffect } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, DialogActions,
-  TextField, Button, Stack,
+  TextField, Button, Stack, MenuItem,
 } from '@mui/material';
+import { ipc } from '../ipc';
 import type { Service } from '../types';
 
 type Props = {
   open: boolean;
   initial?: Service;
   projectId: string;
+  cwd: string;
   onClose: () => void;
   onSubmit: (data: Omit<Service, 'id'> & { id?: string }) => void;
 };
 
-export function ServiceFormModal({ open, initial, projectId, onClose, onSubmit }: Props) {
+export function ServiceFormModal({ open, initial, projectId, cwd, onClose, onSubmit }: Props) {
   const [name, setName] = useState('');
   const [command, setCommand] = useState('');
+  const [scripts, setScripts] = useState<string[]>([]);
+  const [scanError, setScanError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
       setName(initial?.name ?? '');
       setCommand(initial?.command ?? '');
+      setScripts([]);
+      setScanError(null);
+      ipc.listScripts(cwd)
+        .then((s) => {
+          setScripts(s);
+          setScanError(null);
+        })
+        .catch((err) => {
+          setScripts([]);
+          setScanError(String(err));
+        });
     }
-  }, [open, initial]);
+  }, [open, initial, cwd]);
 
   const submit = () => {
     if (!name.trim() || !command.trim()) return;
@@ -34,6 +49,12 @@ export function ServiceFormModal({ open, initial, projectId, onClose, onSubmit }
     });
     onClose();
   };
+
+  const helperText = scanError
+    ? `(디렉토리 읽기 실패: ${cwd})`
+    : scripts.length === 0
+      ? `(이 디렉토리에 *.sh 파일 없음: ${cwd})`
+      : cwd;
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
@@ -51,7 +72,23 @@ export function ServiceFormModal({ open, initial, projectId, onClose, onSubmit }
             value={command}
             onChange={(e) => setCommand(e.target.value)}
             placeholder="./api.sh"
+            helperText={helperText}
           />
+          {scripts.length > 0 && (
+            <TextField
+              select
+              label="이 디렉토리의 스크립트"
+              value=""
+              onChange={(e) => {
+                if (e.target.value) setCommand(`./${e.target.value}`);
+              }}
+              size="small"
+            >
+              {scripts.map((s) => (
+                <MenuItem key={s} value={s}>{s}</MenuItem>
+              ))}
+            </TextField>
+          )}
         </Stack>
       </DialogContent>
       <DialogActions>

@@ -121,6 +121,7 @@ export function ServiceList() {
         open={modalOpen}
         initial={editing}
         projectId={selectedId}
+        cwd={cwd}
         onClose={() => setModalOpen(false)}
         onSubmit={onSubmit}
       />
