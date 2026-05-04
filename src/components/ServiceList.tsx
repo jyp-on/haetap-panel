@@ -54,8 +54,25 @@ export function ServiceList() {
             service={s}
             state={states[s.id] ?? { status: 'stopped' }}
             pinned={pinnedIds.includes(s.id)}
-            onStart={() => { /* Task 9에서 IPC 연결 */ }}
-            onStop={() => { /* Task 9에서 IPC 연결 */ }}
+            onStart={async () => {
+              useStore.getState().setState(s.id, { status: 'starting' });
+              try {
+                const pid = await ipc.startService(s.id, s.command, s.cwd);
+                useStore.getState().setState(s.id, { status: 'running', pid, startedAt: Date.now() });
+              } catch (e) {
+                useStore.getState().setState(s.id, { status: 'crashed', exitCode: -1, at: Date.now() });
+                useStore.getState().appendLog(s.id, `[ERROR] ${e}`);
+              }
+            }}
+            onStop={async () => {
+              useStore.getState().setState(s.id, { status: 'stopping' });
+              try {
+                await ipc.stopService(s.id);
+                // 실제 종료 상태(stopped/crashed)는 state event로 들어옴
+              } catch (e) {
+                useStore.getState().appendLog(s.id, `[ERROR] ${e}`);
+              }
+            }}
             onPin={() => togglePin(s.id)}
             onEdit={() => { setEditing(s); setModalOpen(true); }}
             onDelete={() => { removeService(s.id); persist(); }}
