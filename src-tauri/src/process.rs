@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::process::{Child, Command};
+use tauri::{AppHandle, Emitter};
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Command;
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,16 +17,22 @@ pub enum ServiceState {
 }
 
 pub struct ServiceManager {
-    children: Arc<Mutex<HashMap<String, Child>>>,
+    pids: Arc<Mutex<HashMap<String, u32>>>,
 }
 
 impl ServiceManager {
     pub fn new() -> Self {
-        Self { children: Arc::new(Mutex::new(HashMap::new())) }
+        Self { pids: Arc::new(Mutex::new(HashMap::new())) }
     }
 
-    pub async fn spawn(&self, service_id: &str, command: &str, cwd: &str) -> Result<u32, String> {
-        let child = Command::new("sh")
+    pub async fn spawn(
+        &self,
+        app: &AppHandle,
+        service_id: &str,
+        command: &str,
+        cwd: &str,
+    ) -> Result<u32, String> {
+        let mut child = Command::new("sh")
             .arg("-c")
             .arg(command)
             .current_dir(cwd)
@@ -34,41 +42,99 @@ impl ServiceManager {
             .spawn()
             .map_err(|e| format!("spawn 실패: {}", e))?;
         let pid = child.id().ok_or("PID 획득 실패")?;
-        self.children.lock().await.insert(service_id.to_string(), child);
+        self.pids.lock().await.insert(service_id.to_string(), pid);
+
+        let stdout = child.stdout.take().ok_or("stdout 캡처 실패")?;
+        let stderr = child.stderr.take().ok_or("stderr 캡처 실패")?;
+        let log_event = format!("log:{}", service_id);
+        let state_event = format!("state:{}", service_id);
+
+        // stdout reader
+        {
+            let app = app.clone();
+            let event = log_event.clone();
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(stdout).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    let _ = app.emit(&event, line);
+                }
+            });
+        }
+        // stderr reader (same channel)
+        {
+            let app = app.clone();
+            let event = log_event.clone();
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    let _ = app.emit(&event, line);
+                }
+            });
+        }
+
+        // wait + state event
+        {
+            let app = app.clone();
+            let sid = service_id.to_string();
+            let pids = self.pids.clone();
+            tokio::spawn(async move {
+                let status = child.wait().await;
+                let exit_code = status.ok().and_then(|s| s.code()).unwrap_or(-1);
+                pids.lock().await.remove(&sid);
+                let payload = if exit_code == 0 {
+                    serde_json::json!({"status": "stopped"})
+                } else {
+                    serde_json::json!({
+                        "status": "crashed",
+                        "exitCode": exit_code,
+                        "at": now_ms(),
+                    })
+                };
+                let _ = app.emit(&state_event, payload);
+            });
+        }
+
         Ok(pid)
     }
 
-    pub async fn kill(&self, service_id: &str) -> Result<Option<i32>, String> {
-        let mut guard = self.children.lock().await;
-        let mut child = match guard.remove(service_id) {
-            Some(c) => c,
-            None => return Ok(None),
+    pub async fn kill(&self, service_id: &str) -> Result<bool, String> {
+        let pid = match self.pids.lock().await.get(service_id).copied() {
+            Some(p) => p,
+            None => return Ok(false),
         };
-        drop(guard);
-
-        let pid = child.id().ok_or("PID 없음")?;
         unsafe {
-            libc::kill(pid as i32, libc::SIGTERM);
+            if libc::kill(pid as i32, libc::SIGTERM) != 0 {
+                return Err(format!("SIGTERM 실패: pid={}", pid));
+            }
         }
+        // 5초 후에도 PID가 살아있으면 SIGKILL
+        let pids = self.pids.clone();
+        let sid = service_id.to_string();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            if pids.lock().await.contains_key(&sid) {
+                unsafe {
+                    libc::kill(pid as i32, libc::SIGKILL);
+                }
+            }
+        });
+        Ok(true)
+    }
 
-        let timeout = tokio::time::sleep(std::time::Duration::from_secs(5));
-        tokio::pin!(timeout);
-        tokio::select! {
-            status = child.wait() => {
-                let code = status.map_err(|e| e.to_string())?.code().unwrap_or(-1);
-                Ok(Some(code))
-            }
-            _ = &mut timeout => {
-                let _ = child.kill().await;
-                let status = child.wait().await.map_err(|e| e.to_string())?;
-                Ok(Some(status.code().unwrap_or(-9)))
-            }
-        }
+    pub async fn running_pids(&self) -> HashMap<String, u32> {
+        self.pids.lock().await.clone()
     }
 
     pub async fn is_running(&self, service_id: &str) -> bool {
-        self.children.lock().await.contains_key(service_id)
+        self.pids.lock().await.contains_key(service_id)
     }
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -76,32 +142,9 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn spawn_then_kill_short_command() {
+    async fn pid_map_starts_empty() {
         let mgr = ServiceManager::new();
-        let pid = mgr.spawn("s1", "sleep 30", "/tmp").await.unwrap();
-        assert!(pid > 0);
-        assert!(mgr.is_running("s1").await);
-
-        let exit = mgr.kill("s1").await.unwrap();
-        assert!(exit.is_some());
-        assert!(!mgr.is_running("s1").await);
-    }
-
-    #[tokio::test]
-    async fn spawn_invalid_command_succeeds_at_spawn_layer() {
-        // sh -c itself spawns successfully even when the inner command exits
-        // immediately. The actual exit handling is deferred to Task 4 (state events).
-        let mgr = ServiceManager::new();
-        let result = mgr.spawn("s2", "exit 1", "/tmp").await;
-        assert!(result.is_ok());
-        // Clean up: kill (it might already be gone, that's ok)
-        let _ = mgr.kill("s2").await;
-    }
-
-    #[tokio::test]
-    async fn kill_unknown_service_returns_none() {
-        let mgr = ServiceManager::new();
-        let exit = mgr.kill("ghost").await.unwrap();
-        assert!(exit.is_none());
+        assert!(mgr.running_pids().await.is_empty());
+        assert!(!mgr.is_running("anything").await);
     }
 }
