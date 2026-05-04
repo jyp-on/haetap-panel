@@ -20,9 +20,13 @@ pub fn run() {
                 .app_config_dir()
                 .map_err(|e| e.to_string())?;
             let config_path = config_dir.join("config.json");
+            let runtime_path = config_dir.join("runtime.json");
+
+            // 이전 실행의 잔존 자식 정리
+            process::cleanup_zombies(&runtime_path);
 
             app.manage(AppState {
-                manager: Arc::new(ServiceManager::new()),
+                manager: Arc::new(ServiceManager::new(runtime_path)),
                 config_path,
             });
 

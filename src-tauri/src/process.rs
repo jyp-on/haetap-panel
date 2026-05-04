@@ -1,6 +1,7 @@
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
@@ -9,14 +10,16 @@ pub struct ServiceManager {
     pids: Arc<Mutex<HashMap<String, u32>>>,
     masters: Arc<Mutex<HashMap<String, Box<dyn MasterPty + Send>>>>,
     writers: Arc<Mutex<HashMap<String, Box<dyn Write + Send>>>>,
+    runtime_path: PathBuf,
 }
 
 impl ServiceManager {
-    pub fn new() -> Self {
+    pub fn new(runtime_path: PathBuf) -> Self {
         Self {
             pids: Arc::new(Mutex::new(HashMap::new())),
             masters: Arc::new(Mutex::new(HashMap::new())),
             writers: Arc::new(Mutex::new(HashMap::new())),
+            runtime_path,
         }
     }
 
@@ -69,6 +72,8 @@ impl ServiceManager {
             .lock()
             .await
             .insert(service_id.to_string(), writer);
+        // PID 변동 → runtime 파일 갱신
+        let _ = self.persist_runtime().await;
 
         let log_event = format!("pty:{}", service_id);
         let state_event = format!("state:{}", service_id);
@@ -99,6 +104,7 @@ impl ServiceManager {
             let pids = self.pids.clone();
             let masters = self.masters.clone();
             let writers = self.writers.clone();
+            let runtime_path = self.runtime_path.clone();
             tokio::task::spawn_blocking(move || {
                 let exit = child.wait().ok();
                 let exit_code = exit.as_ref().map(|s| s.exit_code() as i32).unwrap_or(-1);
@@ -107,6 +113,9 @@ impl ServiceManager {
                     pids.lock().await.remove(&sid);
                     masters.lock().await.remove(&sid);
                     writers.lock().await.remove(&sid);
+                    // runtime 파일 갱신
+                    let snapshot: Vec<u32> = pids.lock().await.values().copied().collect();
+                    let _ = persist_pids(&runtime_path, &snapshot);
                 });
 
                 let payload = if exit_code == 0 {
@@ -123,6 +132,11 @@ impl ServiceManager {
         }
 
         Ok(pid)
+    }
+
+    async fn persist_runtime(&self) -> Result<(), String> {
+        let snapshot: Vec<u32> = self.pids.lock().await.values().copied().collect();
+        persist_pids(&self.runtime_path, &snapshot)
     }
 
     pub async fn kill(&self, service_id: &str) -> Result<bool, String> {
@@ -184,6 +198,50 @@ impl ServiceManager {
     }
 }
 
+fn persist_pids(path: &PathBuf, pids: &[u32]) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let raw = serde_json::to_string(pids).map_err(|e| e.to_string())?;
+    std::fs::write(path, raw).map_err(|e| {
+        eprintln!("[runtime] persist 실패: {}", e);
+        e.to_string()
+    })
+}
+
+/// 앱 시작 시 호출. 이전 실행에서 남은 PID들을 SIGKILL로 정리하고 파일 삭제.
+pub fn cleanup_zombies(runtime_path: &PathBuf) {
+    if !runtime_path.exists() {
+        return;
+    }
+    let raw = match std::fs::read_to_string(runtime_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[runtime] read 실패: {}", e);
+            return;
+        }
+    };
+    let pids: Vec<u32> = match serde_json::from_str(&raw) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("[runtime] parse 실패: {}", e);
+            // 깨진 파일 → 삭제하고 진행
+            let _ = std::fs::remove_file(runtime_path);
+            return;
+        }
+    };
+    if !pids.is_empty() {
+        eprintln!("[runtime] 좀비 정리: {} 개의 잔존 PID", pids.len());
+    }
+    for pid in pids {
+        unsafe {
+            // ESRCH (no such process) 등 에러는 무시
+            libc::kill(pid as i32, libc::SIGKILL);
+        }
+    }
+    let _ = std::fs::remove_file(runtime_path);
+}
+
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -197,8 +255,23 @@ mod tests {
 
     #[tokio::test]
     async fn empty_state() {
-        let mgr = ServiceManager::new();
+        let mgr = ServiceManager::new(PathBuf::from("/tmp/haetap-test-runtime.json"));
         assert!(mgr.running_pids().await.is_empty());
         assert!(!mgr.is_running("anything").await);
+    }
+
+    #[test]
+    fn cleanup_handles_missing_file() {
+        let path = PathBuf::from("/tmp/haetap-nonexistent-runtime.json");
+        let _ = std::fs::remove_file(&path);
+        cleanup_zombies(&path); // 파일 없으면 조용히 리턴
+    }
+
+    #[test]
+    fn cleanup_handles_corrupt_file() {
+        let path = PathBuf::from("/tmp/haetap-corrupt-runtime.json");
+        std::fs::write(&path, "not valid json").unwrap();
+        cleanup_zombies(&path);
+        assert!(!path.exists()); // 깨진 파일은 삭제됨
     }
 }
