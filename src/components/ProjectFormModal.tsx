@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, DialogActions,
-  TextField, Button, Stack,
+  TextField, Button, Stack, InputAdornment, IconButton, Tooltip,
 } from '@mui/material';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import type { Project } from '../types';
 
 type Props = {
@@ -33,6 +35,21 @@ export function ProjectFormModal({ open, initial, onClose, onSubmit }: Props) {
     onClose();
   };
 
+  const browseFolder = async () => {
+    try {
+      const selected = await openDialog({
+        directory: true,
+        multiple: false,
+        defaultPath: cwd || undefined,
+      });
+      if (typeof selected === 'string' && selected.length > 0) {
+        setCwd(selected);
+      }
+    } catch (e) {
+      console.error('폴더 선택 실패', e);
+    }
+  };
+
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
       <DialogTitle>{initial ? '프로젝트 편집' : '프로젝트 추가'}</DialogTitle>
@@ -49,6 +66,19 @@ export function ProjectFormModal({ open, initial, onClose, onSubmit }: Props) {
             value={cwd}
             onChange={(e) => setCwd(e.target.value)}
             placeholder="/Users/jyp-mac/develop/haetap/incubody"
+            slotProps={{
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <Tooltip title="Finder에서 폴더 선택">
+                      <IconButton size="small" onClick={browseFolder} edge="end">
+                        <FolderOpenIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </InputAdornment>
+                ),
+              },
+            }}
           />
         </Stack>
       </DialogContent>
